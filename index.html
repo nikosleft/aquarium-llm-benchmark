@@ -74,6 +74,7 @@
             margin: 0 0 12px 0;
             padding-left: 18px;
             color: #cbd5e1;
+            min-height: 75px; /* Keeps cards aligned */
         }
         .bullets li {
             margin-bottom: 4px;
@@ -85,7 +86,7 @@
             position: relative;
             border: 1px solid #475569;
             border-radius: 6px;
-            background: #000;
+            background: #c9f2ff;
             align-self: center;
         }
         iframe {
@@ -215,5 +216,40 @@
             </div>
         </div>
     </div>
+
+    <script>
+        // Programmatic sandbox styling override for same-origin iframes
+        document.querySelectorAll('iframe').forEach(iframe => {
+            iframe.addEventListener('load', () => {
+                try {
+                    const doc = iframe.contentDocument || iframe.contentWindow.document;
+                    if (!doc) return;
+
+                    // 1. Hide the notes element/sections inside the iframe to remove them from layout
+                    const notes = doc.getElementById('notes');
+                    if (notes) notes.style.display = 'none';
+
+                    const sections = doc.querySelectorAll('section');
+                    sections.forEach(sec => sec.style.display = 'none');
+
+                    // 2. Force the iframe body to ONLY focus on centering the canvas element
+                    const body = doc.body;
+                    if (body) {
+                        body.style.display = 'flex';
+                        body.style.flexDirection = 'column';
+                        body.style.justifyContent = 'center';
+                        body.style.alignItems = 'center';
+                        body.style.height = '100vh';
+                        body.style.width = '100vw';
+                        body.style.margin = '0';
+                        body.style.padding = '0';
+                        body.style.overflow = 'hidden';
+                    }
+                } catch (e) {
+                    console.warn("Iframe styling adjustment bypassed:", e);
+                }
+            });
+        });
+    </script>
 </body>
 </html>
