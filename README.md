@@ -1,5 +1,7 @@
 # Autonomous Aquarium Simulation: LLM Code Generation Benchmark
 
+### 🔗 **Live Interactive Dashboard:** [https://nikosleft.github.io/aquarium-llm-benchmark/](https://nikosleft.github.io/aquarium-llm-benchmark/)
+
 An empirical comparison of HTML5 Canvas code generation using various Large Language Models (LLMs) on an identical steering, animation, and rendering task.
 
 ## Evaluation Context & Parameters
@@ -48,3 +50,4 @@ const stemCount = randomInt(3, 5);
 const stemHeight = this.size * (0.8 + Math.random() * 0.4);
 ```
 Because these are recalculated every frame, the background foliage rapidly morphs and jitters visually. Moving these definitions to the `constructor` ensures plants retain a stable shape while swaying.
+```
