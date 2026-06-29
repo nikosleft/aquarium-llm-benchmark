@@ -1,0 +1,655 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Aquarium Simulation</title>
+    <style>
+        body { 
+            margin: 0; 
+            overflow: hidden; 
+            background-color: #e0f7fa; 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        } 
+        canvas { 
+            display: block; 
+            margin: 20px auto; 
+            border: 1px solid #b2ebf2; 
+            background-color: rgb(207, 247, 255); 
+            box-shadow: 0 8px 24px rgba(0, 96, 100, 0.15);
+            border-radius: 4px;
+        } 
+        #notes {
+            max-width: 800px;
+            margin: 30px auto;
+            padding: 20px;
+            background-color: #ffffff;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+            color: #37474f;
+        }
+        h2 {
+            color: #006064;
+            margin-top: 0;
+            border-bottom: 2px solid #b2ebf2;
+            padding-bottom: 8px;
+        }
+        ul {
+            padding-left: 20px;
+        }
+        li {
+            margin-bottom: 8px;
+            line-height: 1.5;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="simulationCanvas" width="800" height="600"></canvas>
+
+    <script>
+        const canvas = document.getElementById('simulationCanvas');
+        const ctx = canvas.getContext('2d');
+        const W = canvas.width;
+        const H = canvas.height;
+
+        // Configuration and State variables
+        const fishArray = [];
+        const bubbleArray = [];
+        const backgroundPlants = [];
+        const foregroundPlants = [];
+        let lastTime = 0;
+
+        // --- CLASSES ---
+
+        class Fish {
+            constructor(x, y, type) {
+                this.x = x;
+                this.y = y;
+                this.type = type !== undefined ? type : Math.floor(Math.random() * 3);
+                
+                // Initialize specific behaviors and physical bounds based on biological type
+                if (this.type === 0) { // Goldfish / Fantail
+                    this.size = 1.0 + Math.random() * 0.4; 
+                    this.minSpeed = 0.8;
+                    this.maxSpeed = 1.6;
+                } else if (this.type === 1) { // Neon Tetra
+                    this.size = 0.6 + Math.random() * 0.3; 
+                    this.minSpeed = 1.6;
+                    this.maxSpeed = 2.6;
+                } else { // Angelfish
+                    this.size = 0.8 + Math.random() * 0.4; 
+                    this.minSpeed = 0.6;
+                    this.maxSpeed = 1.2;
+                }
+                
+                // Randomize initial direction and speed
+                const angle = Math.random() * Math.PI * 2;
+                const speed = this.minSpeed + Math.random() * (this.maxSpeed - this.minSpeed);
+                this.vx = Math.cos(angle) * speed;
+                this.vy = Math.sin(angle) * speed;
+                
+                this.wanderAngle = angle;
+                this.tailPhase = Math.random() * Math.PI * 2;
+                this.swimPhaseOffset = Math.random() * Math.PI * 2; // For biological speed variation
+                
+                this.color = this.getRandomColor();
+                this.accentColor = this.getAccentColor();
+            }
+
+            getRandomColor() {
+                if (this.type === 0) {
+                    const hues = [15, 25, 35]; // Warm orange/gold spectrum
+                    const hue = hues[Math.floor(Math.random() * hues.length)];
+                    return `hsl(${hue}, 95%, 55%)`;
+                } else if (this.type === 1) {
+                    return "#3a4c5e"; // Charcoal base for neon tetra back
+                } else {
+                    // Angelfish: Silver, light yellow, or pastel grey
+                    const option = Math.random();
+                    if (option > 0.5) {
+                        return `hsl(200, 10%, ${80 + Math.random() * 10}%)`; // Silver
+                    } else {
+                        return `hsl(45, 60%, ${75 + Math.random() * 15}%)`; // Soft Gold
+                    }
+                }
+            }
+
+            getAccentColor() {
+                if (this.type === 0) {
+                    return Math.random() > 0.5 ? "rgba(255, 240, 220, 0.75)" : "rgba(255, 80, 0, 0.85)";
+                } else if (this.type === 1) {
+                    return "rgba(255, 0, 80, 0.9)"; // Tetra tail red
+                } else {
+                    return Math.random() > 0.5 ? "rgba(255, 215, 0, 0.85)" : "rgba(60, 60, 60, 0.8)";
+                }
+            }
+
+            // Implement simple group-level separation behavior to avoid excessive overlapping
+            applySeparation(fishes) {
+                let steerX = 0;
+                let steerY = 0;
+                let count = 0;
+                const desiredSeparation = 40 * this.size;
+
+                for (let i = 0; i < fishes.length; i++) {
+                    const other = fishes[i];
+                    if (other === this) continue;
+
+                    const dx = this.x - other.x;
+                    const dy = this.y - other.y;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+
+                    if (dist > 0 && dist < desiredSeparation) {
+                        steerX += (dx / dist) / dist; // Weaker force at greater distance
+                        steerY += (dy / dist) / dist;
+                        count++;
+                    }
+                }
+
+                if (count > 0) {
+                    steerX /= count;
+                    steerY /= count;
+                    const steerMag = Math.sqrt(steerX * steerX + steerY * steerY);
+                    if (steerMag > 0) {
+                        this.vx += (steerX / steerMag) * 0.12;
+                        this.vy += (steerY / steerMag) * 0.12;
+                    }
+                }
+            }
+
+            update(dt, time, fishes) {
+                // Introduce organic gliding patterns (glide/thrust cycle)
+                const glidePhase = Math.sin(time * 1.5 + this.swimPhaseOffset);
+                let targetSpeedMultiplier = 1.0;
+                let wiggleMultiplier = 1.0;
+
+                if (glidePhase < -0.3) { // Gliding phase
+                    targetSpeedMultiplier = 0.5;
+                    wiggleMultiplier = 0.15;
+                }
+
+                // 1. Wandering Behavior
+                this.wanderAngle += (Math.random() - 0.5) * 0.5 * dt * 60;
+                const wanderForceX = Math.cos(this.wanderAngle) * 0.12;
+                const wanderForceY = Math.sin(this.wanderAngle) * 0.12;
+
+                // 2. Boundary Avoidance Behavior
+                let avoidForceX = 0;
+                let avoidForceY = 0;
+                const marginX = 140;
+                const marginY = 110;
+                const boundaryStrength = 0.45;
+
+                if (this.x < marginX) {
+                    avoidForceX = ((marginX - this.x) / marginX) * boundaryStrength;
+                } else if (this.x > W - marginX) {
+                    avoidForceX = -((this.x - (W - marginX)) / marginX) * boundaryStrength;
+                }
+
+                if (this.y < marginY) {
+                    avoidForceY = ((marginY - this.y) / marginY) * boundaryStrength;
+                } else if (this.y > H - marginY) {
+                    avoidForceY = -((this.y - (H - marginY)) / marginY) * boundaryStrength;
+                }
+
+                // Apply combined forces
+                this.vx += (wanderForceX + avoidForceX) * dt * 60;
+                this.vy += (wanderForceY + avoidForceY) * dt * 60;
+
+                // Apply dynamic separation behavior
+                this.applySeparation(fishes);
+
+                // Speed limitations
+                let currentSpeed = Math.sqrt(this.vx * this.vx + this.vy * this.vy);
+                const maxSpeedLimit = this.maxSpeed * targetSpeedMultiplier;
+                const minSpeedLimit = this.minSpeed * targetSpeedMultiplier;
+
+                if (currentSpeed > maxSpeedLimit) {
+                    this.vx = (this.vx / currentSpeed) * maxSpeedLimit;
+                    this.vy = (this.vy / currentSpeed) * maxSpeedLimit;
+                    currentSpeed = maxSpeedLimit;
+                } else if (currentSpeed < minSpeedLimit) {
+                    this.vx = (this.vx / currentSpeed) * minSpeedLimit;
+                    this.vy = (this.vy / currentSpeed) * minSpeedLimit;
+                    currentSpeed = minSpeedLimit;
+                }
+
+                // Step position forward
+                this.x += this.vx * dt * 60;
+                this.y += this.vy * dt * 60;
+
+                // Absolute boundary containment fallback
+                const padding = this.size * 22;
+                if (this.x < padding) {
+                    this.x = padding;
+                    this.vx = Math.abs(this.vx);
+                } else if (this.x > W - padding) {
+                    this.x = W - padding;
+                    this.vx = -Math.abs(this.vx);
+                }
+
+                if (this.y < padding) {
+                    this.y = padding;
+                    this.vy = Math.abs(this.vy);
+                } else if (this.y > H - padding) {
+                    this.y = H - padding;
+                    this.vy = -Math.abs(this.vy);
+                }
+
+                // Smooth tail wiggle animation proportional to speed and glide state
+                this.tailPhase += currentSpeed * dt * 8 * wiggleMultiplier;
+            }
+
+            draw(ctx) {
+                ctx.save();
+                ctx.translate(this.x, this.y);
+                
+                // Align rotation to movement heading
+                const angle = Math.atan2(this.vy, this.vx);
+                ctx.rotate(angle);
+
+                // Horizontal alignment logic: keep dorsal fin pointing upwards
+                if (this.vx < 0) {
+                    ctx.scale(1, -1);
+                }
+
+                const L = this.size * 14; // Base dimension scale
+
+                if (this.type === 0) {
+                    // --- GOLDFISH ---
+                    
+                    // Tail Fin (Flowing, wavy)
+                    const wiggle = Math.sin(this.tailPhase) * (L * 0.45);
+                    ctx.beginPath();
+                    ctx.moveTo(-L, 0);
+                    ctx.bezierCurveTo(-L - L * 0.7, -L * 0.5 + wiggle, -L - L * 0.5, -L * 1.3 + wiggle, -L - L * 1.3, -L * 0.9 + wiggle);
+                    ctx.bezierCurveTo(-L - L * 0.9, wiggle, -L - L * 0.9, wiggle, -L - L * 1.3, L * 0.9 + wiggle);
+                    ctx.bezierCurveTo(-L - L * 0.5, L * 1.3 + wiggle, -L - L * 0.7, L * 0.5 + wiggle, -L, 0);
+                    ctx.fillStyle = this.accentColor;
+                    ctx.fill();
+
+                    // Dorsal Fin
+                    ctx.beginPath();
+                    ctx.moveTo(-L * 0.2, -L * 0.6);
+                    ctx.quadraticCurveTo(-L * 0.6, -L * 1.4, -L * 0.9, -L * 0.8);
+                    ctx.quadraticCurveTo(-L * 0.7, -L * 0.4, -L * 0.5, -L * 0.5);
+                    ctx.fillStyle = this.accentColor;
+                    ctx.fill();
+
+                    // Body
+                    ctx.beginPath();
+                    ctx.moveTo(L * 1.1, 0);
+                    ctx.bezierCurveTo(L * 0.5, -L * 0.9, -L * 0.5, -L * 0.9, -L, 0);
+                    ctx.bezierCurveTo(-L * 0.5, L * 0.9, L * 0.5, L * 0.9, L * 1.1, 0);
+                    ctx.fillStyle = this.color;
+                    ctx.fill();
+
+                    // Eye
+                    ctx.beginPath();
+                    ctx.arc(L * 0.55, -L * 0.22, L * 0.16, 0, Math.PI * 2);
+                    ctx.fillStyle = "#ffffff";
+                    ctx.fill();
+                    ctx.beginPath();
+                    ctx.arc(L * 0.6, -L * 0.22, L * 0.09, 0, Math.PI * 2);
+                    ctx.fillStyle = "#111111";
+                    ctx.fill();
+
+                } else if (this.type === 1) {
+                    // --- NEON TETRA ---
+                    
+                    // Tail Fin
+                    const wiggle = Math.sin(this.tailPhase) * (L * 0.35);
+                    ctx.beginPath();
+                    ctx.moveTo(-L, 0);
+                    ctx.lineTo(-L - L * 0.7, -L * 0.55 + wiggle);
+                    ctx.lineTo(-L - L * 0.45, wiggle);
+                    ctx.lineTo(-L - L * 0.7, L * 0.55 + wiggle);
+                    ctx.closePath();
+                    ctx.fillStyle = this.accentColor;
+                    ctx.fill();
+
+                    // Slender Body Base
+                    ctx.beginPath();
+                    ctx.moveTo(L, 0);
+                    ctx.bezierCurveTo(L * 0.5, -L * 0.45, -L * 0.5, -L * 0.45, -L, 0);
+                    ctx.bezierCurveTo(-L * 0.5, L * 0.45, L * 0.5, L * 0.45, L, 0);
+                    ctx.fillStyle = this.color;
+                    ctx.fill();
+
+                    // Neon Blue Lateral Line
+                    ctx.beginPath();
+                    ctx.moveTo(L * 0.6, -L * 0.08);
+                    ctx.quadraticCurveTo(0, -L * 0.28, -L * 0.85, -L * 0.05);
+                    ctx.lineTo(-L * 0.85, 0);
+                    ctx.quadraticCurveTo(0, -L * 0.12, L * 0.6, -L * 0.03);
+                    ctx.fillStyle = "#00f3ff";
+                    ctx.fill();
+
+                    // Neon Red Ventral Field
+                    ctx.beginPath();
+                    ctx.moveTo(0, L * 0.05);
+                    ctx.quadraticCurveTo(-L * 0.5, L * 0.22, -L * 0.85, L * 0.05);
+                    ctx.lineTo(-L * 0.85, -L * 0.05);
+                    ctx.quadraticCurveTo(-L * 0.5, L * 0.11, 0, L * 0.05);
+                    ctx.fillStyle = "#ff0044";
+                    ctx.fill();
+
+                    // Translucent Dorsal Fin
+                    ctx.beginPath();
+                    ctx.moveTo(-L * 0.15, -L * 0.35);
+                    ctx.lineTo(-L * 0.35, -L * 0.65);
+                    ctx.lineTo(-L * 0.45, -L * 0.3);
+                    ctx.fillStyle = "rgba(200, 245, 255, 0.5)";
+                    ctx.fill();
+
+                    // Eye
+                    ctx.beginPath();
+                    ctx.arc(L * 0.6, -L * 0.1, L * 0.14, 0, Math.PI * 2);
+                    ctx.fillStyle = "#00e5ff";
+                    ctx.fill();
+                    ctx.beginPath();
+                    ctx.arc(L * 0.63, -L * 0.1, L * 0.08, 0, Math.PI * 2);
+                    ctx.fillStyle = "#000000";
+                    ctx.fill();
+
+                } else {
+                    // --- ANGELFISH ---
+                    
+                    // Graceful Tail Fin
+                    const wiggle = Math.sin(this.tailPhase) * (L * 0.25);
+                    ctx.beginPath();
+                    ctx.moveTo(-L * 0.5, 0);
+                    ctx.quadraticCurveTo(-L * 1.1, -L * 0.4 + wiggle, -L * 1.4, -L * 0.5 + wiggle);
+                    ctx.lineTo(-L * 1.2, wiggle);
+                    ctx.lineTo(-L * 1.4, L * 0.5 + wiggle);
+                    ctx.quadraticCurveTo(-L * 1.1, L * 0.4 + wiggle, -L * 0.5, 0);
+                    ctx.fillStyle = this.accentColor;
+                    ctx.fill();
+
+                    // Long Dorsal Fin
+                    ctx.beginPath();
+                    ctx.moveTo(0, -L * 0.7);
+                    ctx.quadraticCurveTo(-L * 0.6, -L * 2.3, -L * 1.3, -L * 1.9);
+                    ctx.quadraticCurveTo(-L * 0.7, -L * 1.1, -L * 0.3, -L * 0.5);
+                    ctx.fillStyle = this.accentColor;
+                    ctx.fill();
+
+                    // Long Ventral Fin
+                    ctx.beginPath();
+                    ctx.moveTo(0, L * 0.7);
+                    ctx.quadraticCurveTo(-L * 0.6, L * 2.3, -L * 1.3, L * 1.9);
+                    ctx.quadraticCurveTo(-L * 0.7, L * 1.1, -L * 0.3, L * 0.5);
+                    ctx.fillStyle = this.accentColor;
+                    ctx.fill();
+
+                    // Diamond-shaped body
+                    ctx.beginPath();
+                    ctx.moveTo(L * 1.05, 0);
+                    ctx.bezierCurveTo(L * 0.15, -L * 1.05, -L * 0.35, -L * 0.85, -L * 0.55, 0);
+                    ctx.bezierCurveTo(-L * 0.35, L * 0.85, L * 0.15, L * 1.05, L * 1.05, 0);
+                    ctx.fillStyle = this.color;
+                    ctx.fill();
+
+                    // Distinct vertical stripes
+                    ctx.strokeStyle = "rgba(45, 55, 65, 0.22)";
+                    ctx.lineWidth = L * 0.14;
+                    ctx.lineCap = "round";
+                    
+                    ctx.beginPath();
+                    ctx.moveTo(-L * 0.25, -L * 0.45);
+                    ctx.lineTo(-L * 0.25, L * 0.45);
+                    ctx.stroke();
+
+                    ctx.beginPath();
+                    ctx.moveTo(0.0, -L * 0.8);
+                    ctx.lineTo(0.0, L * 0.8);
+                    ctx.stroke();
+
+                    // Bright orange/red eye
+                    ctx.beginPath();
+                    ctx.arc(L * 0.5, -L * 0.16, L * 0.13, 0, Math.PI * 2);
+                    ctx.fillStyle = "#ff3d00";
+                    ctx.fill();
+                    ctx.beginPath();
+                    ctx.arc(L * 0.52, -L * 0.16, L * 0.07, 0, Math.PI * 2);
+                    ctx.fillStyle = "#111111";
+                    ctx.fill();
+                }
+
+                ctx.restore();
+            }
+        }
+
+        class Bubble {
+            constructor(isInitial = false) {
+                this.reset(isInitial);
+            }
+
+            reset(isInitial = false) {
+                this.x = Math.random() * W;
+                this.y = isInitial ? Math.random() * H : H + 15 + Math.random() * 50;
+                this.radius = 1.2 + Math.random() * 3.8;
+                this.speed = 0.6 + Math.random() * 1.2;
+                this.wobbleSpeed = 1.2 + Math.random() * 1.8;
+                this.wobblePhase = Math.random() * Math.PI * 2;
+            }
+
+            update(dt) {
+                this.y -= this.speed * dt * 60;
+                this.wobblePhase += this.wobbleSpeed * dt * 4;
+                this.x += Math.sin(this.wobblePhase) * 0.22;
+
+                if (this.y < -this.radius) {
+                    this.reset(false);
+                }
+            }
+
+            draw(ctx) {
+                ctx.save();
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+                ctx.fillStyle = "rgba(255, 255, 255, 0.22)";
+                ctx.fill();
+                ctx.strokeStyle = "rgba(255, 255, 255, 0.35)";
+                ctx.lineWidth = 0.65;
+                ctx.stroke();
+
+                // Specular highlight dot for larger bubbles
+                if (this.radius > 2.5) {
+                    ctx.beginPath();
+                    ctx.arc(this.x - this.radius * 0.35, this.y - this.radius * 0.35, this.radius * 0.18, 0, Math.PI * 2);
+                    ctx.fillStyle = "rgba(255, 255, 255, 0.6)";
+                    ctx.fill();
+                }
+                ctx.restore();
+            }
+        }
+
+        class Plant {
+            constructor(x, y, height) {
+                this.x = x;
+                this.y = y;
+                this.height = height;
+                this.numSegments = 7 + Math.floor(Math.random() * 5);
+                this.segmentLength = height / this.numSegments;
+                this.swayOffset = Math.random() * Math.PI * 2;
+                this.swaySpeed = 0.4 + Math.random() * 0.5;
+                this.color = `hsl(${110 + Math.random() * 35}, ${45 + Math.random() * 20}%, ${18 + Math.random() * 12}%)`;
+                this.width = 6 + Math.random() * 7;
+            }
+
+            draw(ctx, time) {
+                ctx.save();
+                ctx.strokeStyle = this.color;
+                ctx.lineWidth = this.width;
+                ctx.lineCap = "round";
+                ctx.lineJoin = "round";
+
+                ctx.beginPath();
+                ctx.moveTo(this.x, this.y);
+
+                let currentX = this.x;
+                let currentY = this.y;
+
+                // Create progressive sway upwards, making tips bend more than bases
+                for (let i = 1; i <= this.numSegments; i++) {
+                    const sway = Math.sin(time * this.swaySpeed + this.swayOffset + i * 0.28) * (i * 1.8);
+                    const targetX = this.x + sway;
+                    const targetY = this.y - i * this.segmentLength;
+
+                    ctx.quadraticCurveTo(currentX, currentY - this.segmentLength / 2, targetX, targetY);
+                    currentX = targetX;
+                    currentY = targetY;
+                }
+                ctx.stroke();
+                ctx.restore();
+            }
+        }
+
+        // --- ENVIRONMENT RENDERERS ---
+
+        function drawRocks(ctx, canvasWidth, canvasHeight) {
+            // Background Rock Structures
+            ctx.fillStyle = "#3e505b"; 
+            ctx.beginPath();
+            ctx.moveTo(-10, canvasHeight);
+            ctx.quadraticCurveTo(90, canvasHeight - 70, 190, canvasHeight);
+            ctx.closePath();
+            ctx.fill();
+
+            ctx.fillStyle = "#314049";
+            ctx.beginPath();
+            ctx.moveTo(canvasWidth - 210, canvasHeight);
+            ctx.quadraticCurveTo(canvasWidth - 110, canvasHeight - 90, canvasWidth + 10, canvasHeight);
+            ctx.closePath();
+            ctx.fill();
+
+            // Foreground Overlap Rock
+            ctx.fillStyle = "#222c33";
+            ctx.beginPath();
+            ctx.moveTo(canvasWidth - 110, canvasHeight);
+            ctx.quadraticCurveTo(canvasWidth - 50, canvasHeight - 55, canvasWidth + 10, canvasHeight);
+            ctx.closePath();
+            ctx.fill();
+        }
+
+        function drawLightingEffects(ctx, width, height, time) {
+            ctx.save();
+            ctx.globalCompositeOperation = "screen";
+            
+            // Soft shifting sunlight beams
+            const gradient = ctx.createLinearGradient(0, 0, width, height);
+            const intensity = 0.07 + Math.sin(time * 0.7) * 0.02;
+            
+            gradient.addColorStop(0, `rgba(255, 255, 255, ${intensity})`);
+            gradient.addColorStop(0.4, `rgba(224, 253, 255, ${intensity * 0.5})`);
+            gradient.addColorStop(1, "rgba(0, 0, 0, 0)");
+
+            ctx.fillStyle = gradient;
+            ctx.beginPath();
+            ctx.moveTo(0, 0);
+            ctx.lineTo(width * 0.65, 0);
+            ctx.lineTo(width * 0.25, height);
+            ctx.lineTo(0, height);
+            ctx.closePath();
+            ctx.fill();
+            
+            ctx.restore();
+        }
+
+        // --- INITIALIZATION ---
+
+        function init() {
+            // Spawn distinct fish varieties
+            const numFish = 14;
+            for (let i = 0; i < numFish; i++) {
+                const x = 120 + Math.random() * (W - 240);
+                const y = 100 + Math.random() * (H - 200);
+                const type = i % 3; // Evenly distribute Goldfish, Tetras, and Angelfish
+                fishArray.push(new Fish(x, y, type));
+            }
+
+            // Populate background & foreground plant arrays
+            const numPlants = 11;
+            for (let i = 0; i < numPlants; i++) {
+                const x = 50 + Math.random() * (W - 100);
+                const height = 140 + Math.random() * 210;
+                const isForeground = Math.random() > 0.45;
+                const plant = new Plant(x, H, height);
+
+                if (isForeground) {
+                    foregroundPlants.push(plant);
+                } else {
+                    backgroundPlants.push(plant);
+                }
+            }
+
+            // Spawn floating background bubbles
+            const numBubbles = 35;
+            for (let i = 0; i < numBubbles; i++) {
+                bubbleArray.push(new Bubble(true));
+            }
+        }
+
+        // --- SIMULATION LOOP ---
+
+        function gameLoop(timestamp) {
+            if (!lastTime) lastTime = timestamp;
+            let dt = (timestamp - lastTime) / 1000;
+            
+            // Enforce step size boundary limit (safeguard for inactive tab focus suspensions)
+            if (dt > 0.1) dt = 0.1;
+            
+            lastTime = timestamp;
+            const absoluteTimeSeconds = timestamp / 1000;
+
+            // --- Updates ---
+            bubbleArray.forEach(bubble => bubble.update(dt));
+            fishArray.forEach(fish => fish.update(dt, absoluteTimeSeconds, fishArray));
+
+            // --- Rendering ---
+            
+            // Deep water blue backdrop gradient
+            const waterGradient = ctx.createLinearGradient(0, 0, 0, H);
+            waterGradient.addColorStop(0, "#e0f7fa"); 
+            waterGradient.addColorStop(0.45, "#4dd0e1"); 
+            waterGradient.addColorStop(1, "#006064"); 
+            ctx.fillStyle = waterGradient;
+            ctx.fillRect(0, 0, W, H);
+
+            // 1. Shimmering Lighting layer
+            drawLightingEffects(ctx, W, H, absoluteTimeSeconds);
+
+            // 2. Background foliage
+            backgroundPlants.forEach(plant => plant.draw(ctx, absoluteTimeSeconds));
+
+            // 3. Environment seabed rocks
+            drawRocks(ctx, W, H);
+
+            // 4. Foreground foliage (for structural depth overlap)
+            foregroundPlants.forEach(plant => plant.draw(ctx, absoluteTimeSeconds));
+
+            // 5. Floating aquatic bubbles
+            bubbleArray.forEach(bubble => bubble.draw(ctx));
+
+            // 6. Fish rendering
+            fishArray.forEach(fish => fish.draw(ctx));
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Execute setups and start loop
+        init();
+        requestAnimationFrame(gameLoop);
+
+    </script>
+
+    <section id="notes">
+        <h2>Developer Notes</h2>
+        <ul>
+            <li><strong>Steering and Boundary Avoidance:</strong> The fish navigate using a Craig Reynolds-style boundary steering algorithm. When approaching canvas edges, they smoothly adjust their direction relative to their proximity to the boundaries rather than making abrupt direction flips.</li>
+            <li><strong>Biological Variation:</strong> To simulate organic aquatic movement, each fish exhibits dynamic speed changes. A periodic sinewave driver creates distinct "thrusting" and "gliding" phases. Tail-fin wiggling slows down and softens during glides, capturing natural energy-conserving patterns.</li>
+            <li><strong>Cohesion and Separation:</strong> A lightweight separation force is calculated between the fish to minimize artificial overlapping and help them swim in organized, distinct patterns.</li>
+            <li><strong>Environment and Depth Layout:</strong> Procedural rocks and seaweed are divided into foreground and background rendering pipelines, creating a layered three-dimensional field of depth behind and around the autonomously swimming fish.</li>
+        </ul>
+    </section>
+</body>
+</html>

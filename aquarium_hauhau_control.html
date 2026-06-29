@@ -1,0 +1,616 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Aquarium Simulation</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #e0f7fa;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+        }
+        canvas {
+            display: block;
+            border: 3px solid #5d4037;
+            border-radius: 8px;
+            box-shadow: 0 0 30px rgba(0,0,0,0.3);
+            background-color: rgb(207, 247, 255);
+        }
+    </style>
+</head>
+<body>
+    <canvas id="simulationCanvas" width="800" height="600"></canvas>
+
+    <script>
+    // ============================================================
+    //  AQUARIUM SIMULATION
+    //  • Pure JS + Canvas API — no external libraries
+    //  • Object-oriented Fish class with autonomous steering
+    //  • Delta-time frame-rate-independent physics
+    //  • Smooth boundary repulsion & wandering behavior
+    //  • Tail-wiggle animation & bubble particles
+    // ============================================================
+
+    const canvas = document.getElementById('simulationCanvas');
+    const ctx    = canvas.getContext('2d');
+    const W = canvas.width;
+    const H = canvas.height;
+
+    // ---- Constants ----
+    const NUM_FISH          = 15;
+    const BOUNDARY_MARGIN   = 60;          // px from edge where repulsion starts
+    const MAX_SPEED_BASE    = 1.8;         // px per frame (before scaling)
+    const TURN_RATE         = 0.06;        // how fast fish steer toward target
+    const WANDER_INTERVAL   = 120;         // frames between target changes
+    const WANDER_ANGULAR    = Math.PI * 0.15; // random angular perturbation
+    const BUBBLE_COUNT      = 20;
+
+    // ---- Seeded random (for reproducibility of fish colors) ----
+    function seededRandom(seed) {
+        let s = seed;
+        return function () {
+            s = (s * 16807 + 0) % 2147483647;
+            return (s - 1) / 2147483646;
+        };
+    }
+
+    // ============================================================
+    //  FISH CLASS
+    // ============================================================
+    class Fish {
+        constructor(x, y, size, color, seed) {
+            this.size = size;                       // body length in px
+            this.color = color;                     // { body, fin, mouth }
+            this.seed = seed;
+
+            this.pos = { x, y };
+
+            // Initial direction: random angle
+            this.angle = Math.random() * Math.PI * 2;
+            this.targetAngle = this.angle;
+
+            // Speed varies per fish
+            this.speed = MAX_SPEED_BASE * (0.6 + Math.random() * 0.8);
+            // Smooth speed variation via noise
+            this.speedNoise = Math.random() * 0.3;
+            this.speedNoisePhase = Math.random() * Math.PI * 2;
+
+            // Tail animation state
+            this.tailPhase = Math.random() * Math.PI * 2;
+            this.tailSpeed = 0.15 + Math.random() * 0.1;
+
+            // Wandering state
+            this.wanderTimer = WANDER_INTERVAL * (0.5 + Math.random()); // stagger
+            this.wanderAngularOffset = 0;
+        }
+
+        /** Update position & behaviour for one frame (dt normalised to ~60fps) */
+        update(dt) {
+            const s = dt; // scale factor for delta-time
+
+            // ---- Speed variation (slow sinusoidal modulation) ----
+            this.speedNoisePhase += 0.01 * s;
+            const currentSpeed = this.speed *
+                (0.85 + 0.3 * Math.sin(this.speedNoisePhase));
+
+            // ---- Wander / steering ----
+            this.wanderTimer -= s;
+            if (this.wanderTimer <= 0) {
+                // Pick a new target angle with angular perturbation
+                this.wanderAngularOffset =
+                    (Math.random() - 0.5) * WANDER_ANGULAR * 2;
+                this.targetAngle = this.angle + this.wanderAngularOffset;
+                this.wanderTimer = WANDER_INTERVAL *
+                    (0.5 + Math.random() * 1.5);
+            }
+
+            // Smoothly steer toward target
+            let angleDiff = this.targetAngle - this.angle;
+            // Normalise to [-PI, PI]
+            while (angleDiff > Math.PI)  angleDiff -= 2 * Math.PI;
+            while (angleDiff < -Math.PI) angleDiff += 2 * Math.PI;
+
+            this.angle += angleDiff * TURN_RATE * s;
+
+            // ---- Boundary repulsion (smooth, not instant flip) ----
+            const repulsionStrength = 0.04;
+            const margin = BOUNDARY_MARGIN;
+
+            // Left edge
+            if (this.pos.x < margin) {
+                const push = (margin - this.pos.x) / margin;
+                this.angle += push * repulsionStrength * 3 * s;
+            }
+            // Right edge
+            if (this.pos.x > W - margin) {
+                const push = (this.pos.x - (W - margin)) / margin;
+                this.angle -= push * repulsionStrength * 3 * s;
+            }
+            // Top edge
+            if (this.pos.y < margin) {
+                const push = (margin - this.pos.y) / margin;
+                this.angle += push * repulsionStrength * 3 * s;
+            }
+            // Bottom edge
+            if (this.pos.y > H - margin) {
+                const push = (this.pos.y - (H - margin)) / margin;
+                this.angle -= push * repulsionStrength * 3 * s;
+            }
+
+            // ---- Gentle center bias (avoids clustering in corners) ----
+            const cx = W / 2, cy = H / 2;
+            const dx = cx - this.pos.x;
+            const dy = cy - this.pos.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            if (dist > W * 0.3) {
+                const bias = 0.003 * s;
+                this.angle +=
+                    Math.atan2(dy, dx) * bias * dt;
+            }
+
+            // ---- Apply velocity ----
+            this.pos.x += Math.cos(this.angle) * currentSpeed * s;
+            this.pos.y += Math.sin(this.angle) * currentSpeed * s;
+
+            // ---- Hard clamp (safety net) ----
+            const half = this.size * 0.35;
+            this.pos.x = Math.max(half, Math.min(W - half, this.pos.x));
+            this.pos.y = Math.max(half, Math.min(H - half, this.pos.y));
+
+            // ---- Tail wiggle ----
+            this.tailPhase += this.tailSpeed * s * (1 + currentSpeed / 2);
+        }
+
+        /** Draw this fish at its current position & angle */
+        draw(ctx) {
+            ctx.save();
+            ctx.translate(this.pos.x, this.pos.y);
+            ctx.rotate(this.angle);
+
+            const s = this.size;
+            const bodyLen = s;
+            const bodyW   = s * 0.35;
+
+            // ---- Tail fin (animated) ----
+            const tailWag = Math.sin(this.tailPhase) * 0.4;
+            ctx.save();
+            ctx.translate(-bodyLen * 0.42, 0);
+            ctx.rotate(tailWag);
+            ctx.beginPath();
+            ctx.moveTo(0, 0);
+            ctx.quadraticCurveTo(
+                -bodyLen * 0.25, -bodyW * 0.7,
+                -bodyLen * 0.35, -bodyW * 0.5
+            );
+            ctx.quadraticCurveTo(
+                -bodyLen * 0.2, 0,
+                -bodyLen * 0.35, bodyW * 0.5
+            );
+            ctx.quadraticCurveTo(
+                -bodyLen * 0.25, bodyW * 0.7,
+                0, 0
+            );
+            ctx.closePath();
+            ctx.fillStyle = this.color.fin;
+            ctx.fill();
+            ctx.restore();
+
+            // ---- Dorsal fin ----
+            ctx.beginPath();
+            ctx.moveTo(bodyLen * 0.05, -bodyW * 0.25);
+            ctx.quadraticCurveTo(
+                bodyLen * 0.0, -bodyW * 1.1,
+                -bodyLen * 0.15, -bodyW * 0.3
+            );
+            ctx.quadraticCurveTo(
+                -bodyLen * 0.1, -bodyW * 0.15,
+                -bodyLen * 0.2, -bodyW * 0.2
+            );
+            ctx.closePath();
+            ctx.fillStyle = this.color.fin;
+            ctx.fill();
+
+            // ---- Pectoral fins ----
+            ctx.beginPath();
+            ctx.ellipse(bodyLen * 0.05, bodyW * 0.55,
+                bodyW * 0.6, bodyW * 0.2,
+                0.5, 0, Math.PI * 2);
+            ctx.fillStyle = this.color.fin;
+            ctx.fill();
+
+            // ---- Body ----
+            ctx.beginPath();
+            // Streamlined fish shape using bezier curves
+            ctx.moveTo(bodyLen * 0.5, 0);                         // nose
+            ctx.bezierCurveTo(
+                bodyLen * 0.5, -bodyW * 0.6,
+                bodyLen * 0.1, -bodyW * 0.95,
+                -bodyLen * 0.3, -bodyW * 0.55                    // upper body
+            );
+            ctx.bezierCurveTo(
+                -bodyLen * 0.35, -bodyW * 0.3,
+                -bodyLen * 0.35, bodyW * 0.3,
+                -bodyLen * 0.3, bodyW * 0.55                     // lower body
+            );
+            ctx.bezierCurveTo(
+                bodyLen * 0.1, bodyW * 0.95,
+                bodyLen * 0.5, bodyW * 0.6,
+                bodyLen * 0.5, 0                                   // back to nose
+            );
+            ctx.closePath();
+
+            // Gradient for 3-D look
+            const grad = ctx.createLinearGradient(0, -bodyW, 0, bodyW);
+            grad.addColorStop(0, this.color.body);
+            grad.addColorStop(0.5, this.lighten(this.color.body, 40));
+            grad.addColorStop(1, this.color.body);
+            ctx.fillStyle = grad;
+            ctx.fill();
+
+            // Subtle body outline
+            ctx.strokeStyle = this.darken(this.color.body, 40);
+            ctx.lineWidth = 0.8;
+            ctx.stroke();
+
+            // ---- Eye ----
+            const eyeX  = bodyLen * 0.28;
+            const eyeY  = -bodyW * 0.15;
+            const eyeR  = bodyW * 0.2;
+
+            // White of eye
+            ctx.beginPath();
+            ctx.arc(eyeX, eyeY, eyeR, 0, Math.PI * 2);
+            ctx.fillStyle = '#fff';
+            ctx.fill();
+
+            // Pupil
+            ctx.beginPath();
+            ctx.arc(eyeX + eyeR * 0.25, eyeY, eyeR * 0.55, 0, Math.PI * 2);
+            ctx.fillStyle = '#111';
+            ctx.fill();
+
+            // Mouth (subtle line)
+            ctx.beginPath();
+            ctx.moveTo(bodyLen * 0.48, bodyW * 0.02);
+            ctx.quadraticCurveTo(
+                bodyLen * 0.45, bodyW * 0.12,
+                bodyLen * 0.42, bodyW * 0.08
+            );
+            ctx.strokeStyle = this.darken(this.color.body, 60);
+            ctx.lineWidth = 0.6;
+            ctx.stroke();
+
+            // ---- Scales hint (subtle arc lines) ----
+            ctx.globalAlpha = 0.12;
+            for (let i = -2; i <= 2; i++) {
+                const sx = bodyLen * 0.1 + i * bodyW * 0.3;
+                ctx.beginPath();
+                ctx.arc(sx, 0, bodyW * 0.35,
+                    -Math.PI * 0.4, Math.PI * 0.4);
+                ctx.strokeStyle = '#fff';
+                ctx.lineWidth = 0.5;
+                ctx.stroke();
+            }
+            ctx.globalAlpha = 1.0;
+
+            ctx.restore();
+        }
+
+        // ---- Color helpers ----
+        lighten(hex, amt) {
+            return this._shade(hex, amt);
+        }
+        darken(hex, amt) {
+            return this._shade(hex, -amt);
+        }
+        _shade(hex, amt) {
+            let r = parseInt(hex.slice(1, 3), 16);
+            let g = parseInt(hex.slice(3, 5), 16);
+            let b = parseInt(hex.slice(5, 7), 16);
+            r = Math.min(255, Math.max(0, r + amt));
+            g = Math.min(255, Math.max(0, g + amt));
+            b = Math.min(255, Math.max(0, b + amt));
+            return `rgb(${r},${g},${b})`;
+        }
+    }
+
+    // ============================================================
+    //  BUBBLE CLASS (background ambience)
+    // ============================================================
+    class Bubble {
+        constructor(w, h) {
+            this.reset(w, h, true);
+        }
+        reset(w, h, initial) {
+            this.x = Math.random() * w;
+            this.y = initial ? Math.random() * h : h + 10;
+            this.radius = 1 + Math.random() * 2.5;
+            this.speed = 0.2 + Math.random() * 0.5;
+            this.wobblePhase = Math.random() * Math.PI * 2;
+            this.wobbleAmp = 0.3 + Math.random() * 0.5;
+            this.alpha = 0.15 + Math.random() * 0.2;
+        }
+        update(dt) {
+            this.y -= this.speed * dt;
+            this.wobblePhase += 0.02 * dt;
+            this.x += Math.sin(this.wobblePhase) * this.wobbleAmp * dt;
+            if (this.y < -20) this.reset(W, H, false);
+        }
+        draw(ctx) {
+            ctx.beginPath();
+            ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+            ctx.fillStyle = `rgba(255,255,255,${this.alpha})`;
+            ctx.fill();
+            // Highlight
+            ctx.beginPath();
+            ctx.arc(
+                this.x - this.radius * 0.25,
+                this.y - this.radius * 0.25,
+                this.radius * 0.35, 0, Math.PI * 2
+            );
+            ctx.fillStyle = `rgba(255,255,255,${this.alpha * 1.8})`;
+            ctx.fill();
+        }
+    }
+
+    // ============================================================
+    //  SEAWEED CLASS (static background decoration)
+    // ============================================================
+    class Seaweed {
+        constructor(x, baseY, height, seed) {
+            this.x = x;
+            this.baseY = baseY;
+            this.height = height;
+            this.seed = seed;
+            this.segments = 6 + Math.floor(Math.random() * 4);
+        }
+        draw(ctx, time) {
+            const sway = Math.sin(time * 0.0008 + this.seed) * 8;
+            ctx.beginPath();
+            ctx.moveTo(this.x, this.baseY);
+
+            let cx = this.x;
+            let cy = this.baseY;
+            const dy = -this.height / this.segments;
+
+            for (let i = 0; i < this.segments; i++) {
+                const t = (i + 1) / this.segments;
+                const swayX = sway * t * t;
+                cx = this.x + swayX;
+                cy += dy;
+                ctx.quadraticCurveTo(
+                    this.x + swayX * 0.5 + Math.sin(this.seed + i) * 5,
+                    cy + dy * 0.5,
+                    cx, cy
+                );
+            }
+
+            ctx.strokeStyle = `rgba(34,120,60,0.55)`;
+            ctx.lineWidth = 3 + this.height / 60;
+            ctx.lineCap = 'round';
+            ctx.stroke();
+
+            // Leaf blobs along the way
+            ctx.fillStyle = `rgba(34,120,60,0.35)`;
+            for (let i = 0; i < this.segments; i += 2) {
+                const t = (i + 1) / this.segments;
+                const lx = this.x + sway * t * t + 10;
+                const ly = this.baseY - (this.height / this.segments) * i;
+                ctx.beginPath();
+                ctx.ellipse(lx, ly, 8, 3, 0.3, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+    }
+
+    // ============================================================
+    //  INITIALIZATION
+    // ============================================================
+
+    // Colour palettes for fish (warm tropical tones)
+    const PALETTES = [
+        { body: '#ff6b35', fin: '#cc4400' },   // orange
+        { body: '#ffb347', fin: '#cc8833' },    // amber
+        { body: '#ff7eb3', fin: '#cc4488' },    // pink
+        { body: '#ffdd57', fin: '#ccaa33' },    // yellow
+        { body: '#7ec8e3', fin: '#4499bb' },    // light blue
+        { body: '#4ecdc4', fin: '#339990' },    // teal
+        { body: '#a8e6cf', fin: '#66aa88' },    // mint
+        { body: '#dda0dd', fin: '#aa77aa' },    // lavender
+        { body: '#ffd700', fin: '#ccaa00' },    // gold
+        { body: '#ff4500', fin: '#cc3300' },    // red-orange
+        { body: '#1e90ff', fin: '#1177cc' },    // blue
+        { body: '#ff69b4', fin: '#cc4488' },    // hot pink
+        { body: '#00ced1', fin: '#009999' },    // dark turquoise
+        { body: '#ff8c00', fin: '#cc7700' },    // dark orange
+        { body: '#98fb98', fin: '#66bb66' },    // pale green
+    ];
+
+    const fish       = [];
+    const bubbles    = [];
+    const seaweeds   = [];
+    let fishIndex    = 0;
+
+    function createFish() {
+        const palette = PALETTES[fishIndex % PALETTES.length];
+        const size = 28 + Math.random() * 28; // 28–56 px
+        const margin = 60;
+        const fish = new Fish(
+            margin + Math.random() * (W - 2 * margin),
+            margin + Math.random() * (H - 2 * margin),
+            size,
+            palette,
+            Math.random() * 1000
+        );
+        fishIndex++;
+        return fish;
+    }
+
+    function init() {
+        for (let i = 0; i < NUM_FISH; i++) {
+            fish.push(createFish());
+        }
+        for (let i = 0; i < BUBBLE_COUNT; i++) {
+            bubbles.push(new Bubble(W, H));
+        }
+        // Seaweed at the bottom
+        const rng = seededRandom(42);
+        const numSeaweed = 8;
+        for (let i = 0; i < numSeaweed; i++) {
+            const sx = 40 + rng() * (W - 80);
+            const sh = 60 + rng() * 100;
+            seaweeds.push(new Seaweed(sx, H - 5, sh, i));
+        }
+        // A couple of rocks
+        seaweeds.push(new Rock(120, H - 15, 45, 42));
+        seaweeds.push(new Rock(680, H - 12, 55, 42));
+    }
+
+    // Simple rock shape
+    class Rock {
+        constructor(x, baseY, w, seed) {
+            this.x = x; this.baseY = baseY; this.w = w; this.seed = seed;
+            this.points = [];
+            const rng = seededRandom(seed);
+            const n = 12;
+            for (let i = 0; i < n; i++) {
+                const a = (i / n) * Math.PI;
+                const r = w * (0.5 + rng() * 0.5);
+                this.points.push({
+                    x: Math.cos(a) * r,
+                    y: Math.sin(a) * r * 0.6
+                });
+            }
+        }
+        draw(ctx) {
+            ctx.beginPath();
+            ctx.moveTo(this.x + this.points[0].x, this.baseY + this.points[0].y);
+            for (let i = 1; i < this.points.length; i++) {
+                ctx.lineTo(this.x + this.points[i].x, this.baseY + this.points[i].y);
+            }
+            ctx.closePath();
+            const g = ctx.createLinearGradient(this.x, this.baseY - 20, this.x, this.baseY + 10);
+            g.addColorStop(0, '#888');
+            g.addColorStop(1, '#555');
+            ctx.fillStyle = g;
+            ctx.fill();
+        }
+    }
+
+    // ============================================================
+    //  RENDERING HELPERS
+    // ============================================================
+
+    /** Draw the aquarium background (water gradient, light rays) */
+    function drawBackground(ctx, time) {
+        // Water gradient
+        const bg = ctx.createLinearGradient(0, 0, 0, H);
+        bg.addColorStop(0,   '#b2ebf2');
+        bg.addColorStop(0.3, '#80deea');
+        bg.addColorStop(0.7, '#4dd0e1');
+        bg.addColorStop(1,   '#0097a7');
+        ctx.fillStyle = bg;
+        ctx.fillRect(0, 0, W, H);
+
+        // Subtle caustic light rays
+        ctx.globalAlpha = 0.04;
+        for (let i = 0; i < 6; i++) {
+            const x = W * 0.15 + i * W * 0.14;
+            const sway = Math.sin(time * 0.0003 + i * 1.7) * 30;
+            ctx.beginPath();
+            ctx.moveTo(x + sway - 20, 0);
+            ctx.lineTo(x + sway + 20, 0);
+            ctx.lineTo(x + sway + 80, H);
+            ctx.lineTo(x + sway - 40, H);
+            ctx.closePath();
+            ctx.fillStyle = '#fff';
+            ctx.fill();
+        }
+        ctx.globalAlpha = 1.0;
+    }
+
+    // ============================================================
+    //  MAIN GAME LOOP
+    // ============================================================
+    let lastTime = performance.now();
+    let gameTime = 0;
+
+    function gameLoop(timestamp) {
+        // Delta time (ms → seconds, then scale to ~60 fps)
+        const now = timestamp;
+        const rawDt = now - lastTime;
+        lastTime = now;
+        // Clamp to avoid huge jumps (e.g. after tab switch)
+        const dt = Math.min(rawDt / 16.667, 3); // 16.667 ms ≈ 60 fps
+        gameTime += rawDt;
+
+        // ---- Update ----
+        for (let i = 0; i < bubbles.length; i++) {
+            bubbles[i].update(dt);
+        }
+        for (let i = 0; i < fish.length; i++) {
+            fish[i].update(dt);
+        }
+
+        // ---- Draw ----
+        drawBackground(ctx, gameTime);
+
+        // Seaweed & rocks (behind fish)
+        for (let i = 0; i < seaweeds.length; i++) {
+            seaweeds[i].draw(ctx);
+        }
+
+        // Bubbles
+        for (let i = 0; i < bubbles.length; i++) {
+            bubbles[i].draw(ctx);
+        }
+
+        // Fish (sorted by y for slight depth ordering)
+        const sorted = [...fish].sort((a, b) => a.pos.y - b.pos.y);
+        for (let i = 0; i < sorted.length; i++) {
+            sorted[i].draw(ctx);
+        }
+
+        requestAnimationFrame(gameLoop);
+    }
+
+    // ---- Bootstrap ----
+    init();
+    requestAnimationFrame(gameLoop);
+
+    </script>
+
+    <section id="notes">
+        <h2>Implementation Notes</h2>
+        <h3>Architecture</h3>
+        <ul>
+            <li><strong>Fish</strong> — A full class encapsulating position, angle, speed, colour palette, and tail phase. Each fish owns its own wandering timer and speed-noise phase.</li>
+            <li><strong>Bubble</strong> — Lightweight particle class that drifts upward with sinusoidal wobble and respawns when off-screen.</li>
+            <li><strong>Seaweed</strong> — Static (but gently swaying) background decoration drawn as a chain of quadratic Bézier curves.</li>
+        </ul>
+        <h3>Autonomous Behaviours</h3>
+        <ul>
+            <li><strong>Wandering</strong> — Every 120 ± frames a new <em>target angle</em> is chosen within a small angular window of the current heading. The fish steers toward it at a fixed turn rate, producing organic curves.</li>
+            <li><strong>Boundary Repulsion</strong> — Within a 60 px margin of each edge, a push proportional to distance is added to the fish's angle, so it turns away <em>before</em> hitting the wall. Combined with a gentle centre-bias force, fish naturally explore the whole tank without clustering.</li>
+            <li><strong>Speed Modulation</strong> — Each fish's base speed is modulated by a low-frequency sine wave, giving the impression of accelerating and slowing down.</li>
+        </ul>
+        <h3>Rendering</h3>
+        <ul>
+            <li><strong>Delta-time</strong> — All physics are multiplied by a normalised <code>dt</code> (frame-time / 16.667 ms, clamped to ≤ 3×) so movement is identical at 30 fps, 60 fps, or higher.</li>
+            <li><strong>Depth sorting</strong> — Fish are re-sorted by Y each frame so those "lower" on screen render on top, adding a subtle 3-D feel.</li>
+            <li><strong>Fish shape</strong> — A streamlined body drawn with cubic Bézier curves, a gradient fill for volume, animated tail flaps, dorsal &amp; pectoral fins, a glossy eye, and faint scale arcs.</li>
+            <li><strong>Caustics</strong> — Semi-transparent light rays sway gently across the water for ambiance.</li>
+        </ul>
+        <h3>Design Decisions</h3>
+        <ul>
+            <li>15 fish was chosen as a sweet spot between visual richness and performance.</li>
+            <li>12 tropical colour palettes are rotated; each fish gets a random size (28–56 px) for variety.</li>
+            <li>No external libraries — pure Canvas 2D API + requestAnimationFrame.</li>
+        </ul>
+    </section>
+</body>
+</html>
+

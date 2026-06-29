@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LLM Aquarium Code Generation Benchmark</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: #f4f6f9; color: #333; margin: 40px auto; max-width: 800px; padding: 0 20px; }
+        h1 { color: #006064; border-bottom: 2px solid #b2ebf2; padding-bottom: 10px; }
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 30px; }
+        .card { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); border: 1px solid #e1e4e8; text-decoration: none; color: inherit; transition: transform 0.2s, box-shadow 0.2s; }
+        .card:hover { transform: translateY(-3px); box-shadow: 0 8px 12px rgba(0,0,0,0.1); border-color: #00bcd4; }
+        .card h3 { margin: 0 0 10px 0; color: #00838f; }
+        .card p { margin: 0; font-size: 14px; color: #666; }
+        .meta { font-size: 11px; background: #eee; padding: 2px 6px; border-radius: 4px; display: inline-block; margin-top: 10px; }
+    </style>
+</head>
+<body>
+    <h1>LLM Aquarium Benchmark</h1>
+    <p>A comparative analysis of autonomous code generation capabilities across different Large Language Models running an HTML5 Canvas task.</p>
+
+    <div class="grid">
+        <a href="aquarium_claude.html" class="card">
+            <h3>1. Claude (3.5 Sonnet)</h3>
+            <p>Exceptional visual fidelity, smooth delta-time turning, and high-performance offscreen background rendering.</p>
+            <span class="meta">~13 KB</span>
+        </a>
+        <a href="aquarium_gemini.html" class="card">
+            <h3>2. Gemini (1.5 Flash)</h3>
+            <p>Advanced biological movement (glide/thrust cycle), group separation physics, and three distinct fish species.</p>
+            <span class="meta">~16 KB</span>
+        </a>
+        <a href="aquarium_genesis.html" class="card">
+            <h3>3. Claude-Genesis (Qwen35B)</h3>
+            <p>Successfully resolved the corner-lock bug using coordinate targeting, but turn rates are frame-rate dependent.</p>
+            <span class="meta">~14 KB</span>
+        </a>
+        <a href="aquarium_chatgpt.html" class="card">
+            <h3>4. ChatGPT (GPT-4o-Mini)</h3>
+            <p>Highly lightweight structure. Implemented basic vector steering but features minimalist visual details.</p>
+            <span class="meta">~6 KB</span>
+        </a>
+        <a href="aquarium_hauhau.html" class="card">
+            <h3>5. HauhauCS (Normal)</h3>
+            <p>Visual elements like swaying light caustics, but suffers from terminal corner trapping physics.</p>
+            <span class="meta">~8 KB</span>
+        </a>
+        <a href="aquarium_hauhau_control.html" class="card">
+            <h3>6. HauhauCS (Control)</h3>
+            <p>High visual detail. Features a missing render parameter bug (invisible seaweed) and corner-lock physics.</p>
+            <span class="meta">~25 KB</span>
+        </a>
+    </div>
+</body>
+</html>

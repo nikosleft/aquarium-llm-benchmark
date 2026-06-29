@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Autonomous Aquarium Simulation</title>
+
+<style>
+body{
+    margin:0;
+    background:#dff8ff;
+    overflow:hidden;
+    display:flex;
+    justify-content:center;
+    align-items:center;
+    height:100vh;
+    font-family:sans-serif;
+}
+
+canvas{
+    border:1px solid #888;
+    background:#c9f2ff;
+    box-shadow:0 15px 35px rgba(0,0,0,.25);
+}
+</style>
+
+</head>
+<body>
+
+<canvas id="simulationCanvas" width="800" height="600"></canvas>
+
+<script>
+
+const canvas = document.getElementById("simulationCanvas");
+const ctx = canvas.getContext("2d");
+
+const W = canvas.width;
+const H = canvas.height;
+
+const NUM_FISH = 14;
+const fishes = [];
+
+function rand(min,max){
+    return Math.random()*(max-min)+min;
+}
+
+function clamp(v,min,max){
+    return Math.max(min,Math.min(max,v));
+}
+
+function lerp(a,b,t){
+    return a+(b-a)*t;
+}
+
+class Fish{
+
+    constructor(){
+
+        this.x = rand(60,W-60);
+        this.y = rand(60,H-60);
+
+        this.size = rand(16,34);
+
+        this.angle = rand(0,Math.PI*2);
+
+        this.speed = rand(45,95);
+
+        this.turnRate = rand(0.8,1.8);
+
+        this.wander = rand(-1,1);
+
+        this.tailOffset = rand(0,100);
+
+        this.color =
+            `hsl(${rand(5,220)},${rand(60,90)}%,${rand(45,65)}%)`;
+
+    }
+
+    update(dt){
+
+        //-------------------------------------------------
+        // Wandering
+        //-------------------------------------------------
+
+        this.wander += rand(-1,1)*0.8*dt;
+        this.wander = clamp(this.wander,-1.2,1.2);
+
+        this.angle += this.wander*this.turnRate*dt;
+
+        //-------------------------------------------------
+        // Boundary steering
+        //-------------------------------------------------
+
+        const margin = 90;
+
+        let steerX = 0;
+        let steerY = 0;
+
+        if(this.x < margin)
+            steerX = (margin-this.x)/margin;
+
+        if(this.x > W-margin)
+            steerX = -(this.x-(W-margin))/margin;
+
+        if(this.y < margin)
+            steerY = (margin-this.y)/margin;
+
+        if(this.y > H-margin)
+            steerY = -(this.y-(H-margin))/margin;
+
+        if(steerX!==0 || steerY!==0){
+
+            const desired =
+                Math.atan2(steerY,steerX);
+
+            let diff = desired-this.angle;
+
+            while(diff>Math.PI) diff-=Math.PI*2;
+            while(diff<-Math.PI) diff+=Math.PI*2;
+
+            this.angle += diff*2.2*dt;
+
+        }
+
+        //-------------------------------------------------
+
+        this.x += Math.cos(this.angle)*this.speed*dt;
+        this.y += Math.sin(this.angle)*this.speed*dt;
+
+        //-------------------------------------------------
+        // Keep inside
+        //-------------------------------------------------
+
+        this.x = clamp(this.x,this.size,W-this.size);
+        this.y = clamp(this.y,this.size,H-this.size);
+
+    }
+
+    draw(time){
+
+        ctx.save();
+
+        ctx.translate(this.x,this.y);
+        ctx.rotate(this.angle);
+
+        const s = this.size;
+
+        const tail =
+            Math.sin(time*8+this.tailOffset)*0.45;
+
+        //---------------- Body ----------------
+
+        ctx.fillStyle=this.color;
+
+        ctx.beginPath();
+        ctx.ellipse(0,0,s,0.62*s,0,0,Math.PI*2);
+        ctx.fill();
+
+        //---------------- Tail ----------------
+
+        ctx.save();
+
+        ctx.translate(-s,0);
+        ctx.rotate(tail);
+
+        ctx.beginPath();
+        ctx.moveTo(0,0);
+        ctx.lineTo(-0.8*s,-0.55*s);
+        ctx.lineTo(-0.8*s,0.55*s);
+        ctx.closePath();
+        ctx.fill();
+
+        ctx.restore();
+
+        //---------------- Fin ----------------
+
+        ctx.globalAlpha=.45;
+
+        ctx.beginPath();
+        ctx.moveTo(-2,0);
+        ctx.lineTo(-s*.15,-s*.8);
+        ctx.lineTo(s*.35,-.15*s);
+        ctx.closePath();
+        ctx.fill();
+
+        ctx.globalAlpha=1;
+
+        //---------------- Eye ----------------
+
+        ctx.fillStyle="white";
+        ctx.beginPath();
+        ctx.arc(s*.45,-s*.12,s*.12,0,Math.PI*2);
+        ctx.fill();
+
+        ctx.fillStyle="black";
+        ctx.beginPath();
+        ctx.arc(s*.48,-s*.12,s*.06,0,Math.PI*2);
+        ctx.fill();
+
+        ctx.restore();
+
+    }
+
+}
+
+for(let i=0;i<NUM_FISH;i++)
+    fishes.push(new Fish());
+
+function drawBackground(time){
+
+    const g = ctx.createLinearGradient(0,0,0,H);
+    g.addColorStop(0,"#d9fbff");
+    g.addColorStop(.5,"#a8e7ff");
+    g.addColorStop(1,"#78d5f2");
+
+    ctx.fillStyle=g;
+    ctx.fillRect(0,0,W,H);
+
+    //---------------- light rays ----------------
+
+    ctx.globalAlpha=.08;
+
+    for(let i=0;i<8;i++){
+
+        ctx.fillStyle="white";
+
+        ctx.beginPath();
+        ctx.moveTo(i*120,0);
+        ctx.lineTo(i*120+45,H);
+        ctx.lineTo(i*120+95,H);
+        ctx.lineTo(i*120+50,0);
+        ctx.closePath();
+        ctx.fill();
+
+    }
+
+    ctx.globalAlpha=1;
+
+    //---------------- rocks ----------------
+
+    ctx.fillStyle="#8b8b8b";
+
+    for(let i=0;i<7;i++){
+
+        const x=90+i*95;
+
+        ctx.beginPath();
+        ctx.ellipse(x,H-18,35,18,0,0,Math.PI*2);
+        ctx.fill();
+
+    }
+
+    //---------------- plants ----------------
+
+    ctx.strokeStyle="#2c9d47";
+    ctx.lineWidth=4;
+
+    for(let x=40;x<W;x+=55){
+
+        ctx.beginPath();
+
+        let px=x;
+        let py=H;
+
+        ctx.moveTo(px,py);
+
+        for(let j=0;j<8;j++){
+
+            px+=Math.sin(time*1.5+j+x)*6;
+            py-=18;
+
+            ctx.lineTo(px,py);
+
+        }
+
+        ctx.stroke();
+
+    }
+
+    //---------------- bubbles ----------------
+
+    ctx.strokeStyle="rgba(255,255,255,.45)";
+    ctx.lineWidth=1;
+
+    for(let i=0;i<18;i++){
+
+        const bx=(i*47+(time*18)%70)%W;
+        const by=(H-(time*40+i*45)%700);
+
+        ctx.beginPath();
+        ctx.arc(bx,by,2+(i%4),0,Math.PI*2);
+        ctx.stroke();
+
+    }
+
+}
+
+let previous=0;
+
+function gameLoop(timestamp){
+
+    if(!previous) previous=timestamp;
+
+    let dt=(timestamp-previous)/1000;
+    previous=timestamp;
+
+    dt=Math.min(dt,.03);
+
+    drawBackground(timestamp/1000);
+
+    for(const f of fishes)
+        f.update(dt);
+
+    for(const f of fishes)
+        f.draw(timestamp/1000);
+
+    requestAnimationFrame(gameLoop);
+
+}
+
+requestAnimationFrame(gameLoop);
+
+</script>
+
+<section id="notes" style="display:none">
+
+Object-oriented implementation using a Fish class.
+
+Each fish stores:
+- position
+- angle
+- speed
+- size
+- color
+- wander state
+
+Movement is implemented using:
+- frame-rate independent delta time
+- continuous steering
+- smooth wandering
+- wall avoidance steering
+- orientation from velocity
+- animated tail oscillation
+
+</section>
+
+</body>
+</html>
