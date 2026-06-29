@@ -74,7 +74,7 @@
             margin: 0 0 12px 0;
             padding-left: 18px;
             color: #cbd5e1;
-            min-height: 75px; /* Keeps cards aligned */
+            min-height: 75px;
         }
         .bullets li {
             margin-bottom: 4px;
@@ -144,10 +144,10 @@
             </div>
         </div>
 
-        <!-- Claude-Genesis -->
+        <!-- Qwen 3.6 35B A3B Uncensored (Claude-Genesis-V4-APEX) -->
         <div class="card">
             <div class="card-header">
-                <div class="card-title">3. Claude-Genesis (LuffyTheFox)</div>
+                <div class="card-title">3. Qwen 3.6 35B A3B (Claude-Genesis-V4-APEX)</div>
                 <div class="card-meta">
                     <span>File: <code>aquarium_genesis.html</code></span>
                     <span class="size-badge">20.8 KB</span>
@@ -180,10 +180,10 @@
             </div>
         </div>
 
-        <!-- HauhauCS Normal -->
+        <!-- Qwen 3.6 35B A3B Uncensored (HauhauCS - Normal, 0.6 Temp) -->
         <div class="card">
             <div class="card-header">
-                <div class="card-title">5. HauhauCS (Normal, 0.6 Temp)</div>
+                <div class="card-title">5. Qwen 3.6 35B A3B (HauhauCS - Normal, Temp 0.6)</div>
                 <div class="card-meta">
                     <span>File: <code>aquarium_hauhau.html</code></span>
                     <span class="size-badge">8.8 KB</span>
@@ -198,10 +198,10 @@
             </div>
         </div>
 
-        <!-- HauhauCS Control -->
+        <!-- Qwen 3.6 35B A3B Uncensored (HauhauCS - Control, 1.0 Temp) -->
         <div class="card">
             <div class="card-header">
-                <div class="card-title">6. HauhauCS (Control, 1.0 Temp)</div>
+                <div class="card-title">6. Qwen 3.6 35B A3B (HauhauCS - Control, Temp 1.0)</div>
                 <div class="card-meta">
                     <span>File: <code>aquarium_hauhau_control.html</code></span>
                     <span class="size-badge">23.5 KB</span>
@@ -218,21 +218,18 @@
     </div>
 
     <script>
-        // Programmatic sandbox styling override for same-origin iframes
         document.querySelectorAll('iframe').forEach(iframe => {
             iframe.addEventListener('load', () => {
                 try {
                     const doc = iframe.contentDocument || iframe.contentWindow.document;
                     if (!doc) return;
 
-                    // 1. Hide the notes element/sections inside the iframe to remove them from layout
                     const notes = doc.getElementById('notes');
                     if (notes) notes.style.display = 'none';
 
                     const sections = doc.querySelectorAll('section');
                     sections.forEach(sec => sec.style.display = 'none');
 
-                    // 2. Force the iframe body to ONLY focus on centering the canvas element
                     const body = doc.body;
                     if (body) {
                         body.style.display = 'flex';

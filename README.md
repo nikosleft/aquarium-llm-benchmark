@@ -17,7 +17,7 @@ An empirical comparison of HTML5 Canvas code generation using various Large Lang
 
 ## Benchmark Comparison Matrix
 
-| Model / Metric | Claude 4.6 Sonnet | Gemini 3.5 Flash | Claude-Genesis-V4-APEX (Qwen3.6) | GPT-5.5 Instant | HauhauCS (Qwen3.6 Q4) |
+| Model / Metric | Claude 4.6 Sonnet | Gemini 3.5 Flash | Qwen 3.6 35B A3B Uncensored (Claude-Genesis-V4-APEX) | GPT-5.5 Instant | Qwen 3.6 35B A3B Uncensored (HauhauCS) |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **Code Size** | 20.6 KB | 26.8 KB | 20.8 KB | 6.6 KB | 8.8 KB (0.6 Temp) / 23.5 KB (1.0 Temp) |
 | **Corner-Lock Bug** | **Solved** (Vector) | **Solved** (Euler Force) | **Solved** (Sequential Target) | **Solved** (Angle Target) | Broken (Stuck) |
@@ -27,10 +27,10 @@ An empirical comparison of HTML5 Canvas code generation using various Large Lang
 
 ---
 
-## Detailed Feedback for the Genesis Model
+## Detailed Feedback for the Qwen 3.6 35B A3B Fine-Tune (Claude-Genesis-V4-APEX)
 
 ### 1. Key Success: Solving the Corner-Lock Bug
-The original `Qwen3.6-35B-A3B-Uncensored-HauhauCS-Aggressive-Q4_K_M.gguf` base release suffered from a mathematical flaw where 1D scalar additions/subtractions on `this.angle` canceled each other out to zero on corner diagonals, leaving the fish permanently trapped. 
+The original `Qwen3.6-35B-A3B-Uncensored-HauhauCS-Aggressive-Q4_K_M.gguf` base model suffered from a mathematical flaw where 1D scalar additions/subtractions on `this.angle` canceled each other out to zero on corner diagonals, leaving the fish permanently trapped. 
 
 **Genesis successfully resolved this.** By converting coordinates to absolute angles using `angleTo` and target-seeking, Genesis broke the symmetry of the opposing wall forces. The fish resolve boundary turning sequentially, allowing continuous simulation.
 
@@ -48,5 +48,3 @@ const stemCount = randomInt(3, 5);
 const stemHeight = this.size * (0.8 + Math.random() * 0.4);
 ```
 Because these are recalculated every frame, the background foliage rapidly morphs and jitters visually. Moving these definitions to the `constructor` ensures plants retain a stable shape while swaying.
-```
----
